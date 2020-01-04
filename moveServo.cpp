@@ -1,11 +1,13 @@
+#include <boost/python/module.hpp>
+#include <boost/python/def.hpp>
 #include <stdio.h>
 #include <unistd.h>    // UART需要
 #include <sys/fcntl.h> // UART需要
 #include <termios.h>   // UART需要
 #include <string>
-#include <Python.h>
+#include <bits/stdc++.h>
 
-using namespace std;
+using namespace boost::python;
 
 #define NSERIAL_CHAR 256
 #define VMINX 1
@@ -20,10 +22,30 @@ using namespace std;
 //宏函数 以A为高八位 B为低八位 合并为16位整形
 const char *uart_target = "/dev/ttyTHS1";
 
-int moveServo(uint16_t position, int16_t time)
+// Fucntion to convert a string to integer array
+void convertStrtoArr(std::string str, uint16_t *arr)
+{
+    int j = 0, i, sum = 0;
+
+    for (i = 0; str[i] != '\0'; i++)
+    {
+        if (str[i] == ' ')
+        {
+            j++;
+        }
+        else
+        {
+            arr[j] = arr[j] * 10 + (str[i] - 48);
+        }
+    }
+}
+
+int moveServo(std::string positionStr, int16_t time)
 {
     int fid = -1;
-    uint8_t id[] = {1, 2, 3, 4, 5, 6};
+    uint8_t id[6] = {1, 2, 3, 4, 5, 6};
+    uint16_t position[6] = {0};
+    convertStrtoArr(positionStr, position);
     struct termios port_options;
     tcgetattr(fid, &port_options);
     fid = open(uart_target, O_RDWR | O_NOCTTY);
@@ -65,53 +87,37 @@ int moveServo(uint16_t position, int16_t time)
 
     tcflush(fid, TCIFLUSH);
     tcflush(fid, TCIOFLUSH);
-    unsigned char buf[10];
-    position = (position < 0) ? 0 : position;
-    position = (position > 1000) ? 1000 : position;
+    usleep(500000);
+    unsigned char buf[25];
+    // position = (position < 0) ? 0 : position;
+    // position = (position > 1000) ? 1000 : position;
     buf[0] = SERVO_FRAME_HEADER;
     buf[1] = SERVO_FRAME_HEADER;
-    buf[2] = 8;              // length
+    buf[2] = 23;             // length
     buf[3] = CMD_SERVO_MOVE; // cmd
-    buf[4] = 1;              // number of servo to be controlled
+    buf[4] = 6;              // number of servo to be controlled
     buf[5] = GET_LOW_BYTE(time);
     buf[6] = GET_HIGH_BYTE(time);
-    buf[7] = id;
-    buf[8] = GET_LOW_BYTE(position);
-    buf[9] = GET_HIGH_BYTE(position);
+    for (int ind = 1; ind < 7; ind++)
+    {
+        buf[ind * 3 + 4] = id[ind - 1];
+        buf[ind * 3 + 5] = GET_LOW_BYTE(position[ind - 1]);
+        buf[ind * 3 + 6] = GET_HIGH_BYTE(position[ind - 1]);
+    }
 
-    int count;
     if (fid != -1)
     {
-        count = write(fid, &buf[0], 10);
+        int count = write(fid, &buf[0], 25);
         usleep(1000);
 
         if (count < 0)
             printf("UART TX error\n");
     }
     close(fid);
-    return count;
+    return 0;
 }
 
-PyObject *WrappmoveServo(PyObject *self, PyObject *args)
+BOOST_PYTHON_MODULE(moveServo)
 {
-    uint8_t id;
-    uint16_t position;
-    int16_t time;
-    if (!PyArg_ParseTuple(args, "iii", &id, &position, &time))
-    {
-        return NULL;
-    }
-    return Py_BuildValue("i", moveServo(id, position, time));
-}
-
-static PyMethodDef moveServo_methods[] = {
-    {"moveServo", WrappmoveServo, METH_VARARGS, "something"},
-    {NULL}};
-
-extern "C"
-
-    void
-    initmoveServo()
-{
-    Py_InitModule("moveServo", moveServo_methods);
+    def("moveServo", moveServo);
 }
